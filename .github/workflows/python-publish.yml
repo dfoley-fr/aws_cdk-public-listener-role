@@ -56,6 +56,6 @@ jobs:
     - name: Publish to GitHub Packages
       env:
         TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        TWINE_PASSWORD: ${{ secrets.TOKEN }}
       run: |
         twine upload --repository-url https://pypi.pkg.github.com/${{ github.repository_owner }}/ dist/*
