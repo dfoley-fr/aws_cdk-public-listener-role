@@ -1,5 +1,6 @@
 import pytest
-from aws_cdk import App, Stack, Template
+from aws_cdk import App, Stack
+from aws_cdk.assertions import Template
 from alb_listener_rule import AlbListenerRuleStack
 
 
@@ -19,6 +20,8 @@ def test_alb_listener_rule_creation():
     # Test that the construct was created successfully
     assert listener_rule is not None
     assert listener_rule.node.id == "TestListenerRule"
+    assert listener_rule.listener_rule is not None
+    assert listener_rule.listener_rule.priority == 100
 
 
 def test_alb_listener_rule_template():
@@ -44,6 +47,37 @@ def test_alb_listener_rule_template():
             {
                 "Field": "host-header",
                 "Values": ["api.example.com"]
+            }
+        ]
+    })
+    
+    # Check that outputs are created
+    template.has_output("AlbListenerRuleArn", {})
+    template.has_output("AlbListenerRulePriority", {})
+
+
+def test_alb_listener_rule_with_different_host():
+    """Test that the construct works with different host names."""
+    app = App()
+    stack = Stack(app, "TestStack")
+    
+    listener_rule = AlbListenerRuleStack(
+        stack, "TestListenerRule",
+        target_group_arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test-tg/1234567890",
+        ecs_stack_name="test-ecs-stack",
+        listener_priority=200,
+        host_name="www.example.com"
+    )
+    
+    template = Template.from_stack(stack)
+    
+    # Verify the host header condition
+    template.has_resource_properties("AWS::ElasticLoadBalancingV2::ListenerRule", {
+        "Priority": 200,
+        "Conditions": [
+            {
+                "Field": "host-header",
+                "Values": ["www.example.com"]
             }
         ]
     })
