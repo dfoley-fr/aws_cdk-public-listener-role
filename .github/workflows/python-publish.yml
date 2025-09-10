@@ -28,7 +28,6 @@ jobs:
     - name: Run tests
       run: pytest
 
-
   publish:
     needs: test
     runs-on: ubuntu-latest
@@ -58,4 +57,4 @@ jobs:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.TOKEN }}
       run: |
-        twine upload --repository-url https://pypi.pkg.github.com/${{ github.repository_owner }}/ dist/*
+        twine upload --repository-url https://upload.pypi.org/legacy/ dist/*
