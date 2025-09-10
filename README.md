@@ -13,6 +13,8 @@ This module provides a reusable CDK construct (`AlbListenerRuleStack`) that crea
 - Integrates with existing ALB listeners via CloudFormation exports
 - Outputs rule ARN and priority for cross-stack references
 
+## Installation
+```pip install alb-listener-rule ```
 ## Usage
 
 ```python
