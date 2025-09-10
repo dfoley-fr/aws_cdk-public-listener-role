@@ -18,6 +18,15 @@ setup(
         "aws-cdk-lib>=2.0.0",
         "constructs>=10.0.0",
     ],
+    extras_require={
+        "dev": [
+            "pytest>=7.0.0",
+            "pytest-cov>=4.0.0",
+            "black>=23.0.0",
+            "flake8>=6.0.0",
+            "mypy>=1.0.0",
+        ],
+    },
     license="MIT",
     classifiers=[
         "Programming Language :: Python :: 3",
