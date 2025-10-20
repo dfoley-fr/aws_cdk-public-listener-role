@@ -35,8 +35,7 @@ def test_alb_listener_rule_template():
         target_group_arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test-tg/1234567890",
         ecs_stack_name="test-ecs-stack",
         listener_priority=100,
-        host_name="api.example.com",
-        listener_type="External"
+        host_name="api.example.com"
     )
     
     # Generate CloudFormation template
@@ -54,7 +53,8 @@ def test_alb_listener_rule_template():
     })
     
     # Check that outputs are created - look for any outputs with these descriptions
-    outputs = template.to_json()["Outputs"]
+    template_json = template.to_json()
+    outputs = template_json.get("Outputs", {})
     
     # Find outputs by description
     arn_output_found = False
@@ -80,8 +80,7 @@ def test_alb_listener_rule_template_comprehensive():
         target_group_arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test-tg/1234567890",
         ecs_stack_name="test-ecs-stack",
         listener_priority=100,
-        host_name="api.example.com",
-        listener_type="External"
+        host_name="api.example.com"
     )
     
     template = Template.from_stack(stack)
@@ -155,8 +154,7 @@ def test_multiple_listener_rules():
         target_group_arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/api-tg/1234567890",
         ecs_stack_name="test-ecs-stack",
         listener_priority=100,
-        host_name="api.example.com",
-        listener_type="External"
+        host_name="api.example.com"
     )
     
     AlbListenerRuleStack(
@@ -164,8 +162,7 @@ def test_multiple_listener_rules():
         target_group_arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web-tg/1234567890",
         ecs_stack_name="test-ecs-stack",
         listener_priority=200,
-        host_name="www.example.com",
-        listener_type="External"
+        host_name="www.example.com"
     )
     
     template = Template.from_stack(stack)
@@ -195,8 +192,7 @@ def test_internal_listener_rule_creation():
         listener_priority=100,
         host_name="api.internal.example.com",
         listener_type="Internal",
-        name="api",
-        channel="prod"
+        name="api"
     )
     
     # Test that the construct was created successfully
@@ -275,7 +271,8 @@ def test_internal_listener_rule_template():
     })
     
     # Check additional output for Route53 record is created
-    outputs = template.to_json()["Outputs"]
+    template_json = template.to_json()
+    outputs = template_json.get("Outputs", {})
     
     # Find Route53 record output by description
     route53_output_found = False
@@ -365,8 +362,8 @@ def test_external_vs_internal_listener_arns():
     })
 
 
-def test_route53_record_name_format_production():
-    """Test Route53 record name format for production (no channel)."""
+def test_route53_record_name_format():
+    """Test Route53 record name format: name.hostedzone."""
     app = App()
     stack = Stack(app, "TestStack")
     
@@ -378,125 +375,27 @@ def test_route53_record_name_format_production():
         host_name="api.internal.example.com",
         listener_type="Internal",
         name="api"
-        # No channel specified - should use production format
     )
     
     template = Template.from_stack(stack)
     
-    # Check that CloudFormation condition is created
-    conditions = template.to_json().get("Conditions", {})
-    assert "IfReleaseChannel" in conditions
-    
-    # Check Route53 record name uses Fn::If for conditional formatting
+    # Check Route53 record name uses format: ${name}.${HostedZone}
     template.has_resource_properties("AWS::Route53::RecordSet", {
         "Name": {
-            "Fn::If": [
-                "IfReleaseChannel",
+            "Fn::Sub": [
+                "${Name}.${HostedZone}",
                 {
-                    "Fn::Sub": [
-                        "${Name}.${HostedZone}",
-                        {
-                            "Name": "api",
-                            "HostedZone": {
-                                "Fn::ImportValue": {
-                                    "Fn::Sub": [
-                                        "${ECSStackName}-ALBPrivateHostedZoneName",
-                                        {
-                                            "ECSStackName": "test-ecs-stack"
-                                        }
-                                    ]
+                    "Name": "api",
+                    "HostedZone": {
+                        "Fn::ImportValue": {
+                            "Fn::Sub": [
+                                "${ECSStackName}-ALBPrivateHostedZoneName",
+                                {
+                                    "ECSStackName": "test-ecs-stack"
                                 }
-                            }
+                            ]
                         }
-                    ]
-                },
-                {
-                    "Fn::Sub": [
-                        "${Channel}.${Name}.${HostedZone}",
-                        {
-                            "Channel": "",
-                            "Name": "api",
-                            "HostedZone": {
-                                "Fn::ImportValue": {
-                                    "Fn::Sub": [
-                                        "${ECSStackName}-ALBPrivateHostedZoneName",
-                                        {
-                                            "ECSStackName": "test-ecs-stack"
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    ]
-                }
-            ]
-        }
-    })
-
-
-def test_route53_record_name_format_non_production():
-    """Test Route53 record name format for non-production (with channel)."""
-    app = App()
-    stack = Stack(app, "TestStack")
-    
-    AlbListenerRuleStack(
-        stack, "TestInternalListenerRule",
-        target_group_arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test-tg/1234567890",
-        ecs_stack_name="test-ecs-stack",
-        listener_priority=100,
-        host_name="api.internal.example.com",
-        listener_type="Internal",
-        name="api",
-        channel="dev"
-    )
-    
-    template = Template.from_stack(stack)
-    
-    # Check that CloudFormation condition is created
-    conditions = template.to_json().get("Conditions", {})
-    assert "IfReleaseChannel" in conditions
-    
-    # Check Route53 record name uses Fn::If for conditional formatting
-    template.has_resource_properties("AWS::Route53::RecordSet", {
-        "Name": {
-            "Fn::If": [
-                "IfReleaseChannel",
-                {
-                    "Fn::Sub": [
-                        "${Name}.${HostedZone}",
-                        {
-                            "Name": "api",
-                            "HostedZone": {
-                                "Fn::ImportValue": {
-                                    "Fn::Sub": [
-                                        "${ECSStackName}-ALBPrivateHostedZoneName",
-                                        {
-                                            "ECSStackName": "test-ecs-stack"
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    ]
-                },
-                {
-                    "Fn::Sub": [
-                        "${Channel}.${Name}.${HostedZone}",
-                        {
-                            "Channel": "dev",
-                            "Name": "api",
-                            "HostedZone": {
-                                "Fn::ImportValue": {
-                                    "Fn::Sub": [
-                                        "${ECSStackName}-ALBPrivateHostedZoneName",
-                                        {
-                                            "ECSStackName": "test-ecs-stack"
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    ]
+                    }
                 }
             ]
         }
@@ -504,7 +403,7 @@ def test_route53_record_name_format_non_production():
 
 
 def test_route53_record_basic_properties():
-    """Test basic Route53 record properties without complex name formatting."""
+    """Test basic Route53 record properties."""
     app = App()
     stack = Stack(app, "TestStack")
     
@@ -515,8 +414,7 @@ def test_route53_record_basic_properties():
         listener_priority=100,
         host_name="api.internal.example.com",
         listener_type="Internal",
-        name="api",
-        channel="dev"
+        name="api"
     )
     
     template = Template.from_stack(stack)
