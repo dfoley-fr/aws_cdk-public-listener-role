@@ -53,14 +53,21 @@ def test_alb_listener_rule_template():
         ]
     })
     
-    # Check that outputs are created (using pattern matching since logical IDs are auto-generated)
-    template.has_output("*", {
-        "Description": "ARN of the created ALB listener rule"
-    })
+    # Check that outputs are created - look for any outputs with these descriptions
+    outputs = template.to_json()["Outputs"]
     
-    template.has_output("*", {
-        "Description": "Priority of the created ALB listener rule"
-    })
+    # Find outputs by description
+    arn_output_found = False
+    priority_output_found = False
+    
+    for output_key, output_value in outputs.items():
+        if output_value.get("Description") == "ARN of the created ALB listener rule":
+            arn_output_found = True
+        elif output_value.get("Description") == "Priority of the created ALB listener rule":
+            priority_output_found = True
+    
+    assert arn_output_found, "ALB listener rule ARN output not found"
+    assert priority_output_found, "ALB listener rule priority output not found"
 
 
 def test_alb_listener_rule_template_comprehensive():
@@ -265,9 +272,17 @@ def test_internal_listener_rule_template():
     })
     
     # Check additional output for Route53 record is created
-    template.has_output("*", {
-        "Description": "Name of the created Route53 record"
-    })
+    outputs = template.to_json()["Outputs"]
+    
+    # Find Route53 record output by description
+    route53_output_found = False
+    
+    for output_key, output_value in outputs.items():
+        if output_value.get("Description") == "Name of the created Route53 record":
+            route53_output_found = True
+            break
+    
+    assert route53_output_found, "Route53 record name output not found"
 
 
 def test_internal_listener_rule_without_name_raises_error():
@@ -343,5 +358,88 @@ def test_external_vs_internal_listener_arns():
                     }
                 ]
             }
+        }
+    })
+
+
+def test_route53_record_name_format_production():
+    """Test Route53 record name format for production (no channel)."""
+    app = App()
+    stack = Stack(app, "TestStack")
+    
+    AlbListenerRuleStack(
+        stack, "TestInternalListenerRule",
+        target_group_arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test-tg/1234567890",
+        ecs_stack_name="test-ecs-stack",
+        listener_priority=100,
+        host_name="api.internal.example.com",
+        listener_type="Internal",
+        name="api"
+        # No channel specified - should use production format
+    )
+    
+    template = Template.from_stack(stack)
+    
+    # Check Route53 record name uses production format: ${name}.${HostedZone}
+    template.has_resource_properties("AWS::Route53::RecordSet", {
+        "Name": {
+            "Fn::Sub": [
+                "${Name}.${HostedZone}",
+                {
+                    "Name": "api",
+                    "HostedZone": {
+                        "Fn::ImportValue": {
+                            "Fn::Sub": [
+                                "${ECSStackName}-ALBPrivateHostedZoneName",
+                                {
+                                    "ECSStackName": "test-ecs-stack"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    })
+
+
+def test_route53_record_name_format_non_production():
+    """Test Route53 record name format for non-production (with channel)."""
+    app = App()
+    stack = Stack(app, "TestStack")
+    
+    AlbListenerRuleStack(
+        stack, "TestInternalListenerRule",
+        target_group_arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test-tg/1234567890",
+        ecs_stack_name="test-ecs-stack",
+        listener_priority=100,
+        host_name="api.internal.example.com",
+        listener_type="Internal",
+        name="api",
+        channel="dev"
+    )
+    
+    template = Template.from_stack(stack)
+    
+    # Check Route53 record name uses non-production format: ${channel}.${name}.${HostedZone}
+    template.has_resource_properties("AWS::Route53::RecordSet", {
+        "Name": {
+            "Fn::Sub": [
+                "${Channel}.${Name}.${HostedZone}",
+                {
+                    "Channel": "dev",
+                    "Name": "api",
+                    "HostedZone": {
+                        "Fn::ImportValue": {
+                            "Fn::Sub": [
+                                "${ECSStackName}-ALBPrivateHostedZoneName",
+                                {
+                                    "ECSStackName": "test-ecs-stack"
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
         }
     })
