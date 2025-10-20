@@ -14,7 +14,8 @@ def test_alb_listener_rule_creation():
         target_group_arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test-tg/1234567890",
         ecs_stack_name="test-ecs-stack",
         listener_priority=100,
-        host_name="api.example.com"
+        host_name="api.example.com",
+        listener_type="External"
     )
     
     # Test that the construct was created successfully
@@ -34,7 +35,8 @@ def test_alb_listener_rule_template():
         target_group_arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test-tg/1234567890",
         ecs_stack_name="test-ecs-stack",
         listener_priority=100,
-        host_name="api.example.com"
+        host_name="api.example.com",
+        listener_type="External"
     )
     
     # Generate CloudFormation template
@@ -168,4 +170,178 @@ def test_multiple_listener_rules():
     
     template.has_resource_properties("AWS::ElasticLoadBalancingV2::ListenerRule", {
         "Priority": 200
+    })
+
+
+def test_internal_listener_rule_creation():
+    """Test that AlbListenerRuleStack can be created with Internal listener type."""
+    app = App()
+    stack = Stack(app, "TestStack")
+    
+    listener_rule = AlbListenerRuleStack(
+        stack, "TestInternalListenerRule",
+        target_group_arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test-tg/1234567890",
+        ecs_stack_name="test-ecs-stack",
+        listener_priority=100,
+        host_name="api.internal.example.com",
+        listener_type="Internal",
+        name="api",
+        channel="prod"
+    )
+    
+    # Test that the construct was created successfully
+    assert listener_rule is not None
+    assert listener_rule.listener_type == "Internal"
+    assert hasattr(listener_rule, 'record_set')
+
+
+def test_internal_listener_rule_template():
+    """Test that Internal listener rule creates both listener rule and Route53 record."""
+    app = App()
+    stack = Stack(app, "TestStack")
+    
+    AlbListenerRuleStack(
+        stack, "TestInternalListenerRule",
+        target_group_arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test-tg/1234567890",
+        ecs_stack_name="test-ecs-stack",
+        listener_priority=100,
+        host_name="api.internal.example.com",
+        listener_type="Internal",
+        name="api"
+    )
+    
+    template = Template.from_stack(stack)
+    
+    # Check that a listener rule is created with Internal listener ARN
+    template.has_resource_properties("AWS::ElasticLoadBalancingV2::ListenerRule", {
+        "ListenerArn": {
+            "Fn::ImportValue": {
+                "Fn::Sub": [
+                    "${ECSStackName}-ALBPrivateListener",
+                    {
+                        "ECSStackName": "test-ecs-stack"
+                    }
+                ]
+            }
+        },
+        "Priority": 100
+    })
+    
+    # Check that Route53 RecordSet is created
+    template.has_resource_properties("AWS::Route53::RecordSet", {
+        "Type": "A",
+        "AliasTarget": {
+            "DNSName": {
+                "Fn::ImportValue": {
+                    "Fn::Sub": [
+                        "${ECSStackName}-ALBPrivateLoadBalancerUrl",
+                        {
+                            "ECSStackName": "test-ecs-stack"
+                        }
+                    ]
+                }
+            },
+            "HostedZoneId": {
+                "Fn::ImportValue": {
+                    "Fn::Sub": [
+                        "${ECSStackName}-ALBPrivateLoadBalancerCanonicalHostedZoneID",
+                        {
+                            "ECSStackName": "test-ecs-stack"
+                        }
+                    ]
+                }
+            }
+        },
+        "HostedZoneId": {
+            "Fn::ImportValue": {
+                "Fn::Sub": [
+                    "${ECSStackName}-ALBPrivateHostedZoneId",
+                    {
+                        "ECSStackName": "test-ecs-stack"
+                    }
+                ]
+            }
+        }
+    })
+    
+    # Check additional output for Route53 record is created
+    template.has_output("*", {
+        "Description": "Name of the created Route53 record"
+    })
+
+
+def test_internal_listener_rule_without_name_raises_error():
+    """Test that Internal listener rule without name parameter raises ValueError."""
+    app = App()
+    stack = Stack(app, "TestStack")
+    
+    with pytest.raises(ValueError, match="name parameter is required for Internal listener type"):
+        AlbListenerRuleStack(
+            stack, "TestInternalListenerRule",
+            target_group_arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test-tg/1234567890",
+            ecs_stack_name="test-ecs-stack",
+            listener_priority=100,
+            host_name="api.internal.example.com",
+            listener_type="Internal"
+        )
+
+
+def test_external_vs_internal_listener_arns():
+    """Test that External and Internal listener types use different listener ARNs."""
+    app = App()
+    stack = Stack(app, "TestStack")
+    
+    # Create External listener rule
+    AlbListenerRuleStack(
+        stack, "ExternalListenerRule",
+        target_group_arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test-tg/1234567890",
+        ecs_stack_name="test-ecs-stack",
+        listener_priority=100,
+        host_name="api.example.com",
+        listener_type="External"
+    )
+    
+    # Create Internal listener rule
+    AlbListenerRuleStack(
+        stack, "InternalListenerRule",
+        target_group_arn="arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/test-tg/1234567890",
+        ecs_stack_name="test-ecs-stack",
+        listener_priority=200,
+        host_name="api.internal.example.com",
+        listener_type="Internal",
+        name="api"
+    )
+    
+    template = Template.from_stack(stack)
+    
+    # Should have 2 listener rules and 1 Route53 record
+    template.resource_count_is("AWS::ElasticLoadBalancingV2::ListenerRule", 2)
+    template.resource_count_is("AWS::Route53::RecordSet", 1)
+    
+    # Check External listener ARN
+    template.has_resource_properties("AWS::ElasticLoadBalancingV2::ListenerRule", {
+        "ListenerArn": {
+            "Fn::ImportValue": {
+                "Fn::Sub": [
+                    "${ECSStackName}-ALBListenerHTTPS",
+                    {
+                        "ECSStackName": "test-ecs-stack"
+                    }
+                ]
+            }
+        }
+    })
+    
+    # Check Internal listener ARN
+    template.has_resource_properties("AWS::ElasticLoadBalancingV2::ListenerRule", {
+        "ListenerArn": {
+            "Fn::ImportValue": {
+                "Fn::Sub": [
+                    "${ECSStackName}-ALBPrivateListener",
+                    {
+                        "ECSStackName": "test-ecs-stack"
+                    }
+                ]
+            }
+        }
     })

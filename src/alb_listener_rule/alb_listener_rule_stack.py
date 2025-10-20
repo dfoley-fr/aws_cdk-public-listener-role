@@ -1,8 +1,10 @@
 from aws_cdk import (
     aws_elasticloadbalancingv2 as elbv2,
+    aws_route53 as route53,
     Stack,
     Fn,
     CfnOutput,
+    CfnCondition,
 )
 from constructs import Construct
 
@@ -18,7 +20,10 @@ class AlbListenerRuleStack(Construct):
         target_group_arn: str,
         ecs_stack_name: str,
         listener_priority: int, 
-        host_name: str,  
+        host_name: str,
+        listener_type: str = "External",
+        name: str = None,
+        channel: str = None,
         **kwargs
     ):
         """
@@ -31,14 +36,25 @@ class AlbListenerRuleStack(Construct):
             ecs_stack_name: Name of the ECS stack that exports the ALB listener ARN
             listener_priority: Priority for the listener rule (1-50000)
             host_name: Host header value to match for routing
+            listener_type: Type of listener - "External" or "Internal"
+            name: Service name for Route53 record (required for Internal type)
+            channel: Release channel for Route53 record (optional)
         """
         super().__init__(scope, construct_id, **kwargs)
+        self.listener_type = listener_type
 
-        listener_arn = Fn.import_value(
-            Fn.sub("${ECSStackName}-ALBListenerHTTPS", {
-                "ECSStackName": ecs_stack_name
-            })
-        )
+        if listener_type == "Internal":
+            listener_arn = Fn.import_value(
+                Fn.sub("${ECSStackName}-ALBPrivateListener", {
+                    "ECSStackName": ecs_stack_name
+                })
+            )
+        else:
+            listener_arn = Fn.import_value(
+                Fn.sub("${ECSStackName}-ALBListenerHTTPS", {
+                    "ECSStackName": ecs_stack_name
+                })
+            )
 
         # Create the listener rule
         self.listener_rule = elbv2.CfnListenerRule(
@@ -58,6 +74,63 @@ class AlbListenerRuleStack(Construct):
                 )
             ],
         )
+
+        if self.listener_type == "Internal":
+            self._create_route53_record(ecs_stack_name, name, channel)
+
+    def _create_route53_record(self, ecs_stack_name: str, name: str, channel: str):
+        """Create Route53 RecordSet for Internal listener type."""
+        if not name:
+            raise ValueError("name parameter is required for Internal listener type")
+        
+        is_release_channel = CfnCondition(
+            self, "IfReleaseChannel",
+            expression=Fn.condition_equals(channel or "", "")
+        )
+        
+        # Create the RecordSet
+        self.record_set = route53.CfnRecordSet(
+            self, "RecordSet",
+            type="A",
+            alias_target=route53.CfnRecordSet.AliasTargetProperty(
+                dns_name=Fn.import_value(
+                    Fn.sub("${ECSStackName}-ALBPrivateLoadBalancerUrl", {
+                        "ECSStackName": ecs_stack_name
+                    })
+                ),
+                hosted_zone_id=Fn.import_value(
+                    Fn.sub("${ECSStackName}-ALBPrivateLoadBalancerCanonicalHostedZoneID", {
+                        "ECSStackName": ecs_stack_name
+                    })
+                )
+            ),
+            hosted_zone_id=Fn.import_value(
+                Fn.sub("${ECSStackName}-ALBPrivateHostedZoneId", {
+                    "ECSStackName": ecs_stack_name
+                })
+            ),
+            name=Fn.condition_if(
+                is_release_channel.logical_id,
+                Fn.sub("${Name}.${HostedZone}", {
+                    "Name": name,
+                    "HostedZone": Fn.import_value(
+                        Fn.sub("${ECSStackName}-ALBPrivateHostedZoneName", {
+                            "ECSStackName": ecs_stack_name
+                        })
+                    )
+                }),
+                Fn.sub("${Name}.${HostedZone}", {
+                    "Channel": channel or "",
+                    "Name": name,
+                    "HostedZone": Fn.import_value(
+                        Fn.sub("${ECSStackName}-ALBPrivateHostedZoneName", {
+                            "ECSStackName": ecs_stack_name
+                        })
+                    )
+                })
+            ).to_string()
+        )
+
         
         # Outputs
         CfnOutput(
@@ -72,3 +145,11 @@ class AlbListenerRuleStack(Construct):
             export_name=f"{Stack.of(self).stack_name}-AlbListenerRulePriority",
             description="Priority of the created ALB listener rule"
         )
+        
+        if self.listener_type == "Internal" and hasattr(self, 'record_set'):
+            CfnOutput(
+                self, "Route53RecordName",
+                value=self.record_set.name,
+                export_name=f"{Stack.of(self).stack_name}-Route53RecordName",
+                description="Name of the created Route53 record"
+            )
