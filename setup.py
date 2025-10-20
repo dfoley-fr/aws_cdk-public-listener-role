@@ -7,7 +7,7 @@ with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name="alb-listener-rule",
-    version="0.1.0",
+    version="0.1.1",
     author="David Foley",
     description="Reusable CDK construct to add ALB listener rules",
     long_description=long_description,
