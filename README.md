@@ -28,7 +28,6 @@ listener_rule = AlbListenerRuleStack(
     listener_priority=100,
     listener_type="Internal",
     host_name="api.example.com"
-    channel="dev"  # Optional: for non-production environments
 )
 ```
 
@@ -42,7 +41,6 @@ listener_rule = AlbListenerRuleStack(
 | `host_name` | str | Yes | - | Host header value to match for routing |
 | `listener_type` | str | No | "External" | Type of listener ("External" or "Internal") |
 | `name` | str | No* | - | Service name for DNS record (*Required for Internal type) |
-| `channel` | str | No | - | Release channel (e.g., "dev", "staging"). If not provided, uses production DNS format |
 
 
 
@@ -118,7 +116,6 @@ dev_service_rule = AlbListenerRuleStack(
     host_name="dev.auth-service.internal.mycompany.com",
     listener_type="Internal",
     name="auth-service",
-    channel="dev"
 )
 ```
 
