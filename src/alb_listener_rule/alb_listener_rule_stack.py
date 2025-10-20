@@ -76,7 +76,7 @@ class AlbListenerRuleStack(Construct):
         if self.listener_type == "Internal":
             self._create_route53_record(ecs_stack_name, name)
 
-     def _create_route53_record(self, ecs_stack_name: str, name: str):
+    def _create_route53_record(self, ecs_stack_name: str, name: str):
         """Create Route53 RecordSet for Internal listener type."""
         # Create the RecordSet with format: name.hostedzone
         self.record_set = route53.CfnRecordSet(
