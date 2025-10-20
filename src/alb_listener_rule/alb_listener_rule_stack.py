@@ -23,7 +23,6 @@ class AlbListenerRuleStack(Construct):
         host_name: str,
         listener_type: str = "External",
         name: str = None,
-        channel: str = None,
         **kwargs
     ):
         """
@@ -38,7 +37,6 @@ class AlbListenerRuleStack(Construct):
             host_name: Host header value to match for routing
             listener_type: Type of listener - "External" or "Internal"
             name: Service name for Route53 record (required for Internal type)
-            channel: Release channel for Route53 record (optional)
         """
         super().__init__(scope, construct_id, **kwargs)
         self.listener_type = listener_type
@@ -76,19 +74,11 @@ class AlbListenerRuleStack(Construct):
         )
 
         if self.listener_type == "Internal":
-            self._create_route53_record(ecs_stack_name, name, channel)
+            self._create_route53_record(ecs_stack_name, name)
 
-    def _create_route53_record(self, ecs_stack_name: str, name: str, channel: str):
+     def _create_route53_record(self, ecs_stack_name: str, name: str):
         """Create Route53 RecordSet for Internal listener type."""
-        if not name:
-            raise ValueError("name parameter is required for Internal listener type")
-        
-        is_release_channel = CfnCondition(
-            self, "IfReleaseChannel",
-            expression=Fn.condition_equals(channel or "", "")
-        )
-        
-        # Create the RecordSet
+        # Create the RecordSet with format: name.hostedzone
         self.record_set = route53.CfnRecordSet(
             self, "RecordSet",
             type="A",
@@ -109,26 +99,14 @@ class AlbListenerRuleStack(Construct):
                     "ECSStackName": ecs_stack_name
                 })
             ),
-            name=Fn.condition_if(
-                is_release_channel.logical_id,
-                Fn.sub("${Name}.${HostedZone}", {
-                    "Name": name,
-                    "HostedZone": Fn.import_value(
-                        Fn.sub("${ECSStackName}-ALBPrivateHostedZoneName", {
-                            "ECSStackName": ecs_stack_name
-                        })
-                    )
-                }),
-                Fn.sub("${Name}.${HostedZone}", {
-                    "Channel": channel or "",
-                    "Name": name,
-                    "HostedZone": Fn.import_value(
-                        Fn.sub("${ECSStackName}-ALBPrivateHostedZoneName", {
-                            "ECSStackName": ecs_stack_name
-                        })
-                    )
-                })
-            ).to_string()
+            name=Fn.sub("${Name}.${HostedZone}", {
+                "Name": name,
+                "HostedZone": Fn.import_value(
+                    Fn.sub("${ECSStackName}-ALBPrivateHostedZoneName", {
+                        "ECSStackName": ecs_stack_name
+                    })
+                )
+            })
         )
 
         
