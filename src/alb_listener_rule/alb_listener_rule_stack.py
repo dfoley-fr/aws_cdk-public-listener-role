@@ -4,7 +4,6 @@ from aws_cdk import (
     Stack,
     Fn,
     CfnOutput,
-    CfnCondition,
 )
 from constructs import Construct
 
@@ -41,6 +40,9 @@ class AlbListenerRuleStack(Construct):
         super().__init__(scope, construct_id, **kwargs)
         self.listener_type = listener_type
 
+        if listener_type == "Internal" and not name:
+            raise ValueError("name parameter is required for Internal listener type")
+
         if listener_type == "Internal":
             listener_arn = Fn.import_value(
                 Fn.sub("${ECSStackName}-ALBPrivateListener", {
@@ -73,12 +75,13 @@ class AlbListenerRuleStack(Construct):
             ],
         )
 
+        # Create Route53 record for Internal listener type
         if self.listener_type == "Internal":
             self._create_route53_record(ecs_stack_name, name)
+        self._create_outputs()
 
     def _create_route53_record(self, ecs_stack_name: str, name: str):
         """Create Route53 RecordSet for Internal listener type."""
-        # Create the RecordSet with format: name.hostedzone
         self.record_set = route53.CfnRecordSet(
             self, "RecordSet",
             type="A",
@@ -109,8 +112,8 @@ class AlbListenerRuleStack(Construct):
             })
         )
 
-        
-        # Outputs
+    def _create_outputs(self):
+        """Create CloudFormation outputs."""
         CfnOutput(
             self, "AlbListenerRuleArn",
             value=self.listener_rule.ref,
